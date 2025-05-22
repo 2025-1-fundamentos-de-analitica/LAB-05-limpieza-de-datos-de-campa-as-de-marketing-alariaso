@@ -2,7 +2,19 @@
 Escriba el codigo que ejecute la accion solicitada.
 """
 
+import calendar
+import pandas as pd
+from zipfile import ZipFile
+from pathlib import Path
+
 # pylint: disable=import-outside-toplevel
+
+
+months = {v: k for (k,v) in enumerate(map(str.lower, calendar.month_abbr))}
+
+
+def yesno_to_num(x, s="yes"):
+    return 1 if x == s else 0
 
 
 def clean_campaign_data():
@@ -49,6 +61,40 @@ def clean_campaign_data():
 
 
     """
+
+    dfs = []
+
+    for file in Path("files/input").iterdir():
+        with ZipFile(file) as file:
+            for member in file.namelist():
+                with file.open(member) as csvfile:
+                    df = pd.read_csv(csvfile, index_col=0)
+                    df = df.set_index("client_id")
+                    dfs.append(df)
+
+
+    df = pd.concat(dfs)
+    df["nmonth"] = df["month"].map(months)
+    df["day"] = df["day"].apply(lambda x: f"{x:02d}")
+    clients = df[["age", "job", "marital", "education", "credit_default", "mortgage"]].copy()
+    clients["job"] = clients["job"].str.replace(".", "").str.replace("-", "_")
+    clients["education"] = clients["education"].str.replace(".", "_").replace("unknown", pd.NA)
+    clients["credit_default"] = clients["credit_default"].apply(yesno_to_num)
+    clients["mortgage"] = clients["mortgage"].apply(yesno_to_num)
+
+    campaign = df[["number_contacts", "contact_duration", "previous_campaign_contacts", "previous_outcome", "campaign_outcome"]].copy()
+    campaign["previous_outcome"] = campaign["previous_outcome"].apply(yesno_to_num, s="success")
+    campaign["campaign_outcome"] = campaign["campaign_outcome"].apply(yesno_to_num)
+    campaign["last_contact_date"] = df["nmonth"].apply(lambda x: f"2022-{x:02d}-") + df["day"]
+
+    economics = df[["cons_price_idx", "euribor_three_months"]].copy()
+
+    outdir = Path("files/output")
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    clients.to_csv(outdir / "client.csv")
+    campaign.to_csv(outdir / "campaign.csv")
+    economics.to_csv(outdir / "economics.csv")
 
     return
 
